@@ -90,7 +90,8 @@ jobs:
       - name: Collect APK
         run: |
           mkdir -p out
-          cp "$RUNNER_TEMP/zcode-android-release.apk" "out/zcode-android-$(date +%Y%m%d)-release.apk"
+          SHA=$(git -C zcode rev-parse --short=8 HEAD)
+          cp "$RUNNER_TEMP/zcode-android-release.apk" "out/zcode-android-$SHA-release.apk"
           ls -lh out/
           sha256sum out/*.apk | tee out/SHA256SUMS.txt
           git -C zcode rev-parse HEAD | tee out/upstream-commit.txt
