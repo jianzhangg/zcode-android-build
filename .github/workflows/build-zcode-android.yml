@@ -47,6 +47,18 @@ jobs:
           echo "sdk.dir=$ANDROID_SDK_ROOT" > zcode/packages/android/local.properties
           ls "$ANDROID_SDK_ROOT/platforms" "$ANDROID_SDK_ROOT/build-tools"
 
+      - name: Verify source tree is untouched
+        run: |
+          cd zcode
+          echo "checkout: $(git rev-parse HEAD)"
+          changes=$(git status --porcelain | grep -v '^?? packages/android/local.properties$' || true)
+          if [ -n "$changes" ]; then
+            echo "::error::上游源码树出现预期外的改动，终止构建"
+            echo "$changes"
+            exit 1
+          fi
+          echo "OK：除 local.properties（仅含 SDK 路径）外，源码零改动"
+
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
 
