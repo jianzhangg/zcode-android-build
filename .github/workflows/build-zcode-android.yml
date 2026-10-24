@@ -60,6 +60,8 @@ jobs:
           find zcode/packages/android/app/build/outputs/apk -name "*.apk" -exec cp {} out/ \;
           ls -lh out/
           sha256sum out/*.apk | tee out/SHA256SUMS.txt
+          git -C zcode rev-parse HEAD | tee out/upstream-commit.txt
+          git -C zcode log -1 --format='%ci %s' >> out/upstream-commit.txt
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
