@@ -18,6 +18,9 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      ANDROID_HOME: /usr/local/lib/android/sdk
+      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
     steps:
       - name: Checkout upstream (sparse)
         uses: actions/checkout@v5
@@ -36,9 +39,13 @@ jobs:
 
       - name: Install SDK platform and build-tools
         run: |
-          sdkmanager --version
-          yes | sdkmanager --licenses >/dev/null || true
-          sdkmanager --install "platforms;android-36.1" "build-tools;36.1.0"
+          CMD=$(ls -d "$ANDROID_SDK_ROOT"/cmdline-tools/*/bin/sdkmanager 2>/dev/null | sort -V | tail -1)
+          echo "sdkmanager: $CMD"
+          "$CMD" --version
+          yes | "$CMD" --licenses >/dev/null 2>&1 || true
+          "$CMD" --install "platforms;android-36.1" "build-tools;36.1.0"
+          echo "sdk.dir=$ANDROID_SDK_ROOT" > zcode/packages/android/local.properties
+          ls "$ANDROID_SDK_ROOT/platforms" "$ANDROID_SDK_ROOT/build-tools"
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
