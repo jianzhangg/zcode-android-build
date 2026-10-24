@@ -1,0 +1,65 @@
+name: Build ZCode Android APK
+
+on:
+  workflow_dispatch:
+    inputs:
+      upstream_ref:
+        description: "zai-org/ZCode 的 ref（分支/标签/提交）"
+        required: true
+        default: main
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/**"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout upstream (sparse)
+        uses: actions/checkout@v4
+        with:
+          repository: zai-org/ZCode
+          ref: ${{ inputs.upstream_ref || 'main' }}
+          sparse-checkout: packages/android
+          path: zcode
+          persist-credentials: false
+
+      - name: Setup JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install SDK platform and build-tools
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager --install "platforms;android-36.1" "build-tools;36.1.0"
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Build debug APK
+        working-directory: zcode/packages/android
+        run: ./gradlew assembleDebug --no-daemon --stacktrace
+
+      - name: Collect APK
+        run: |
+          mkdir -p out
+          find zcode/packages/android/app/build/outputs/apk -name "*.apk" -exec cp {} out/ \;
+          ls -lh out/
+          sha256sum out/*.apk | tee out/SHA256SUMS.txt
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: zcode-android-debug
+          path: out/
+          if-no-files-found: error
+          retention-days: 30
