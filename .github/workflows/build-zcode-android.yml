@@ -62,14 +62,35 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Build debug APK
+      - name: Build release APK (unsigned)
         working-directory: zcode/packages/android
-        run: ./gradlew assembleDebug --no-daemon --stacktrace
+        run: ./gradlew assembleRelease --no-daemon --stacktrace
+
+      - name: Sign APK with stable release key
+        env:
+          ZCODE_KEYSTORE_B64: ${{ secrets.ZCODE_KEYSTORE_B64 }}
+          ZCODE_KEYSTORE_PASS: ${{ secrets.ZCODE_KEYSTORE_PASS }}
+          ZCODE_KEY_PASS: ${{ secrets.ZCODE_KEY_PASS }}
+        run: |
+          BT=$(ls -d "$ANDROID_SDK_ROOT"/build-tools/36.1.0)
+          echo "$ZCODE_KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.p12"
+          IN=$(find zcode/packages/android/app/build/outputs/apk/release -name "*.apk" | head -1)
+          echo "unsigned: $IN"
+          "$BT/zipalign" -p -f 4 "$IN" "$RUNNER_TEMP/aligned.apk"
+          "$BT/apksigner" sign \
+            --ks "$RUNNER_TEMP/release.p12" --ks-type PKCS12 \
+            --ks-key-alias zcode \
+            --ks-pass "env:ZCODE_KEYSTORE_PASS" \
+            --key-pass "env:ZCODE_KEY_PASS" \
+            --v1-signing-enabled false --v2-signing-enabled true \
+            --out "$RUNNER_TEMP/zcode-android-release.apk" \
+            "$RUNNER_TEMP/aligned.apk"
+          "$BT/apksigner" verify --print-certs "$RUNNER_TEMP/zcode-android-release.apk"
 
       - name: Collect APK
         run: |
           mkdir -p out
-          find zcode/packages/android/app/build/outputs/apk -name "*.apk" -exec cp {} out/ \;
+          cp "$RUNNER_TEMP/zcode-android-release.apk" "out/zcode-android-$(date +%Y%m%d)-release.apk"
           ls -lh out/
           sha256sum out/*.apk | tee out/SHA256SUMS.txt
           git -C zcode rev-parse HEAD | tee out/upstream-commit.txt
@@ -78,7 +99,7 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: zcode-android-debug
+          name: zcode-android-release
           path: out/
           if-no-files-found: error
           retention-days: 30
