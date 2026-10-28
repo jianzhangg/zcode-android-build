@@ -12,6 +12,7 @@ on:
     paths:
       - ".github/workflows/**"
       - "patches/**"
+      - "icon/**"
 
 permissions:
   contents: read
@@ -82,6 +83,26 @@ jobs:
           diff -u "$RUNNER_TEMP/expected.patch" "$RUNNER_TEMP/actual.patch" \
             || { echo "::error::源码树改动与 patches/ 不一致，终止构建"; exit 1; }
           echo "OK：源码树改动 == patches/ 下的补丁"
+
+      - name: Apply launcher icon overlay
+        run: |
+          cd zcode
+          RES=packages/android/app/src/main/res
+          # 上游图标是 .webp + 两个 vector，整套换成 ZCode PWA 那版（icon/res 由 icon/generate.py 生成）
+          rm -f "$RES"/mipmap-*/ic_launcher.webp "$RES"/mipmap-*/ic_launcher_round.webp
+          cp -R "$GITHUB_WORKSPACE"/self/icon/res/. "$RES"/
+          echo "--- res 改动 ---"
+          git status --porcelain | grep "$RES" || true
+          # 图标只允许动 res/，其它改动必须已经由补丁解释
+          unexpected=$(git status --porcelain \
+            | grep -v '^?? packages/android/local.properties$' \
+            | grep -vE 'packages/android/app/src/main/res/|ui/RemoteControlApp\.kt' || true)
+          if [ -n "$unexpected" ]; then
+            echo "::error::图标覆盖步骤出现了预期外的改动"
+            echo "$unexpected"
+            exit 1
+          fi
+          echo "OK：图标只动了 res/"
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4

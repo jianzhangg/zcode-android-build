@@ -1,8 +1,17 @@
 diff --git a/packages/android/app/src/main/java/com/example/zcode_mobile/ui/RemoteControlApp.kt b/packages/android/app/src/main/java/com/example/zcode_mobile/ui/RemoteControlApp.kt
-index 2d15499..55a63e1 100644
+index 2d15499..7a5d53f 100644
 --- a/packages/android/app/src/main/java/com/example/zcode_mobile/ui/RemoteControlApp.kt
 +++ b/packages/android/app/src/main/java/com/example/zcode_mobile/ui/RemoteControlApp.kt
-@@ -706,6 +706,8 @@ private fun createRemoteControlWebView(
+@@ -696,6 +696,8 @@ private fun createRemoteControlWebView(
+         settings.apply {
+             javaScriptEnabled = true
+             domStorageEnabled = true
++            // 页面里的 target=_blank / window.open 要它才会走到 onCreateWindow
++            setSupportMultipleWindows(true)
+             cacheMode = WebSettings.LOAD_DEFAULT
+             mediaPlaybackRequiresUserGesture = false
+             setSupportZoom(false)
+@@ -706,10 +708,36 @@ private fun createRemoteControlWebView(
              mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
              userAgentString = "$userAgentString ZCodeAndroid/${BuildConfig.VERSION_NAME}"
          }
@@ -11,13 +20,41 @@ index 2d15499..55a63e1 100644
          webChromeClient = object : WebChromeClient() {
              override fun onProgressChanged(view: WebView?, newProgress: Int) {
                  onProgressChanged(newProgress)
-@@ -737,6 +739,13 @@ private fun createRemoteControlWebView(
+             }
++
++            // 页面里 window.open / target=_blank 的链接也装进同一个 WebView，靠返回键回退。
++            // 不接管的话这些链接点下去不会有任何反应。
++            override fun onCreateWindow(
++                view: WebView,
++                isDialog: Boolean,
++                isUserGesture: Boolean,
++                resultMsg: android.os.Message,
++            ): Boolean {
++                val transport = resultMsg.obj as? WebView.WebViewTransport ?: return false
++                val popup = WebView(view.context)
++                popup.webViewClient = object : WebViewClient() {
++                    override fun shouldOverrideUrlLoading(
++                        popupView: WebView,
++                        request: WebResourceRequest,
++                    ): Boolean {
++                        view.loadUrl(request.url.toString())
++                        return true
++                    }
++                }
++                transport.webView = popup
++                resultMsg.sendToTarget()
++                return true
++            }
+         }
+         webViewClient = object : WebViewClient() {
+             override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
+@@ -737,6 +765,13 @@ private fun createRemoteControlWebView(
                      return false
                  }
  
 +                // 登录是顶层跳转到 chat.z.ai / *.bigmodel.cn 的 OAuth，回调再落回 /remote/v4。
 +                // 把它丢给外部浏览器会让登录态留在浏览器进程里，壳内永远停在未登录。
-+                // 所以除 zcode 深链之外的 http(s) 主框架导航一律留在 WebView 内。
++                // 所以除 zcode 深链之外的 http(s) 主框架导航一律留在 WebView 内，靠返回键回退。
 +                if (request.url.scheme == "https" || request.url.scheme == "http") {
 +                    return false
 +                }

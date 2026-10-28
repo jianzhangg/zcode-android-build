@@ -37,16 +37,27 @@
 
 于是点「登录」→ 跳到 `chat.z.ai`（不在白名单）→ 被 `openExternalUrl` 甩到系统浏览器 → 登录态留在浏览器进程，WebView 里永远未登录。这就是「打包过但一直登录不成功」的原因。
 
-`patches/0001-keep-oauth-login-inside-webview.patch` 做两件事：
+`patches/0001-keep-oauth-login-inside-webview.patch` 做三件事：
 
-1. `shouldOverrideUrlLoading` 里，除 `zcode://` 深链外的 `http(s)` 主框架导航一律留在 WebView（`return false`），只把非 http(s) 的 scheme 交给系统
+1. `shouldOverrideUrlLoading` 里，除 `zcode://` 深链外的 `http(s)` 主框架导航一律留在 WebView（`return false`），只把非 http(s) 的 scheme 交给系统。这样登录能走通，页面里的普通链接也都在壳内打开，靠系统返回键回退（`RemoteControlApp.kt` 里已有的 `BackHandler` 是「能退就 `goBack()`，退到底才关掉远控」）
 2. WebView 打开 `setAcceptThirdPartyCookies`，避免回调链路里的跨站 Cookie 静默丢失
+3. `setSupportMultipleWindows(true)` + `onCreateWindow`：远控页里 `window.open` / `target=_blank` 的链接（文档、反馈、社区）原来点下去毫无反应，现在装进同一个 WebView
 
 顺带解决 `/remote` → `/cn/remote` 这类同域跳转同样被甩出去的问题。
 
+## 图标
+
+用 ZCode PWA 那一版，源头是 `icon/src/icon-512.png`，`icon/generate.py`（Pillow）生成 `icon/res/`：
+
+- `mipmap-*dpi/ic_launcher.png` 与 `ic_launcher_round.png`：传统方形图标 + 圆形版，48/72/96/144/192 px
+- `mipmap-*dpi/ic_launcher_foreground.png`：自适应图标前景，深底扣成透明，画布 108dp，图形占 47%
+- `mipmap-anydpi-v26/ic_launcher{,_round}.xml`：`<background>` 指向 `@color/zcode_icon_background`（`#111318`），`<monochrome>` 复用前景
+
+CI 覆盖图标时会先删掉上游那套 `.webp`，再整目录拷进去。
+
 ## 源码完整性
 
-构建分两步校验：
+构建分三步校验：
 
 ```bash
 # 1. 打补丁前：上游检出本身必须是干净的
@@ -58,6 +69,9 @@ changes=$(git status --porcelain | grep -v '^?? packages/android/local.propertie
 cat ../self/patches/*.patch > expected.patch
 git diff > actual.patch
 diff -u expected.patch actual.patch
+
+# 3. 换图标后：res/ 之外不许再冒出别的改动
+git status --porcelain | grep -vE 'local.properties|src/main/res/|ui/RemoteControlApp\.kt' && exit 1
 ```
 
 除 `local.properties`（只含一行 `sdk.dir`）和 `patches/` 里的补丁之外，上游源码树有任何改动就中止构建。产物里附 `upstream-commit.txt`（编译用的提交号）和 `patches.txt`（补丁哈希）。
