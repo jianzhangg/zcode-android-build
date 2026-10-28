@@ -11,6 +11,7 @@ on:
     branches: [main]
     paths:
       - ".github/workflows/**"
+      - "patches/**"
 
 permissions:
   contents: read
@@ -22,6 +23,12 @@ jobs:
       ANDROID_HOME: /usr/local/lib/android/sdk
       ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
     steps:
+      - name: Checkout build repo (patches)
+        uses: actions/checkout@v5
+        with:
+          path: self
+          persist-credentials: false
+
       - name: Checkout upstream (sparse)
         uses: actions/checkout@v5
         with:
@@ -59,6 +66,23 @@ jobs:
           fi
           echo "OK：除 local.properties（仅含 SDK 路径）外，源码零改动"
 
+      - name: Apply local patches
+        run: |
+          cd zcode
+          for p in "$GITHUB_WORKSPACE"/self/patches/*.patch; do
+            echo "::group::$(basename "$p")"
+            git apply -v "$p"
+            echo "::endgroup::"
+          done
+          echo "--- 应用后的改动 ---"
+          git diff --stat
+          # 断言：上游源码树里的改动必须恰好等于 patches/ 下所有补丁的拼接
+          cat "$GITHUB_WORKSPACE"/self/patches/*.patch > "$RUNNER_TEMP/expected.patch"
+          git diff > "$RUNNER_TEMP/actual.patch"
+          diff -u "$RUNNER_TEMP/expected.patch" "$RUNNER_TEMP/actual.patch" \
+            || { echo "::error::源码树改动与 patches/ 不一致，终止构建"; exit 1; }
+          echo "OK：源码树改动 == patches/ 下的补丁"
+
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
 
@@ -91,11 +115,13 @@ jobs:
         run: |
           mkdir -p out
           SHA=$(git -C zcode rev-parse --short=8 HEAD)
-          cp "$RUNNER_TEMP/zcode-android-release.apk" "out/zcode-android-$SHA-release.apk"
+          cp "$RUNNER_TEMP/zcode-android-release.apk" "out/zcode-android-$SHA-patched.apk"
           ls -lh out/
           sha256sum out/*.apk | tee out/SHA256SUMS.txt
           git -C zcode rev-parse HEAD | tee out/upstream-commit.txt
           git -C zcode log -1 --format='%ci %s' >> out/upstream-commit.txt
+          sha256sum self/patches/*.patch > out/patches.txt
+          ls self/patches >> out/patches.txt
 
       - name: Upload APK
         uses: actions/upload-artifact@v4

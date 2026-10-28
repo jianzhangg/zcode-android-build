@@ -1,0 +1,27 @@
+diff --git a/packages/android/app/src/main/java/com/example/zcode_mobile/ui/RemoteControlApp.kt b/packages/android/app/src/main/java/com/example/zcode_mobile/ui/RemoteControlApp.kt
+index 2d15499..55a63e1 100644
+--- a/packages/android/app/src/main/java/com/example/zcode_mobile/ui/RemoteControlApp.kt
++++ b/packages/android/app/src/main/java/com/example/zcode_mobile/ui/RemoteControlApp.kt
+@@ -706,6 +706,8 @@ private fun createRemoteControlWebView(
+             mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
+             userAgentString = "$userAgentString ZCodeAndroid/${BuildConfig.VERSION_NAME}"
+         }
++        // 登录回调链路上可能有跨站的 token 交换，默认关闭的第三方 Cookie 会让它静默失败。
++        CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
+         webChromeClient = object : WebChromeClient() {
+             override fun onProgressChanged(view: WebView?, newProgress: Int) {
+                 onProgressChanged(newProgress)
+@@ -737,6 +739,13 @@ private fun createRemoteControlWebView(
+                     return false
+                 }
+ 
++                // 登录是顶层跳转到 chat.z.ai / *.bigmodel.cn 的 OAuth，回调再落回 /remote/v4。
++                // 把它丢给外部浏览器会让登录态留在浏览器进程里，壳内永远停在未登录。
++                // 所以除 zcode 深链之外的 http(s) 主框架导航一律留在 WebView 内。
++                if (request.url.scheme == "https" || request.url.scheme == "http") {
++                    return false
++                }
++
+                 openExternalUrl(view.context, request.url)
+                 return true
+             }
