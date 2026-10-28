@@ -85,8 +85,9 @@ def main():
 
     # 源图里 Z 占整幅边长的比例，传统图标沿用这个比例
     legacy_ratio = (box[2] - box[0]) / src_edge
-    # adaptive 可见区约 72dp、画布 108dp，换算过去让可见区里的比例与源图一致
-    fg_ratio = legacy_ratio * 72 / 108
+    # adaptive 前景同样按整幅 108dp 画布铺这个比例。规范里的「可见区 72dp」是下限，
+    # 实际启动器（HyperOS 等）会把整幅画布铺到图标槽位，按 72/108 缩一次会显得 Z 偏小。
+    fg_ratio = legacy_ratio
 
     print(f"源图 Z 边界 {box}，占边长 {legacy_ratio:.1%}")
 
