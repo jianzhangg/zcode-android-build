@@ -32,7 +32,7 @@ Release 附件走 `objects.githubusercontent.com`，代理能覆盖，也套得�
 - **release 变体**：无 `debuggable`，不放行明文流量；入口链接仍只接受 `https://zcode.z.ai/remote…`（`RemoteControlUrlPolicy` 拦在扫码/粘贴/deep link 这一步），进壳之后的导航不再卡域名，否则登录走不通（见下节）
 - 官方 `build.gradle.kts` 没有 signingConfig，直接 `assembleRelease` 只会得到 unsigned 包。workflow 里用 `zipalign` + `apksigner` 补签名，密钥来自仓库 secret
 - 签名证书固定，所以后续版本可以覆盖安装
-- 功能范围：扫码 / 粘贴链接 / deep link 三种入口，最近 5 条链接，WebView 承载官方远控页，前台服务保活 + 屏幕常亮。**没有**任务通知、应用锁、多机管理
+- 功能范围：扫码 / 粘贴链接 / deep link 三种入口，最近 5 条链接，WebView 承载官方远控页，远控页全屏无标题栏，前台服务保活（去掉通知权限后 Android 13+ 不占通知栏）+ 屏幕常亮。**没有**任务通知、应用锁、多机管理
 
 ## 为什么要打补丁
 
@@ -47,13 +47,20 @@ Release 附件走 `objects.githubusercontent.com`，代理能覆盖，也套得�
 
 于是点「登录」→ 跳到 `chat.z.ai`（不在白名单）→ 被 `openExternalUrl` 甩到系统浏览器 → 登录态留在浏览器进程，WebView 里永远未登录。这就是「打包过但一直登录不成功」的原因。
 
-`patches/0001-keep-oauth-login-inside-webview.patch` 做三件事：
+`patches/0001-shell-webview-login-and-fullscreen.patch` 做四件事：
 
 1. `shouldOverrideUrlLoading` 里，除 `zcode://` 深链外的 `http(s)` 主框架导航一律留在 WebView（`return false`），只把非 http(s) 的 scheme 交给系统。这样登录能走通，页面里的普通链接也都在壳内打开，靠系统返回键回退（`RemoteControlApp.kt` 里已有的 `BackHandler` 是「能退就 `goBack()`，退到底才关掉远控」）
 2. WebView 打开 `setAcceptThirdPartyCookies`，避免回调链路里的跨站 Cookie 静默丢失
 3. `setSupportMultipleWindows(true)` + `onCreateWindow`：远控页里 `window.open` / `target=_blank` 的链接（文档、反馈、社区）原来点下去毫无反应，现在装进同一个 WebView
+4. 删掉 `RemoteControlTopBar`（上游那个 48dp 的「远程控制 / 重载 / 关闭」栏），整屏交给 WebView，状态栏内边距改由外层 `Column` 的 `statusBarsPadding()` 承担。退出改走系统返回键（`BackHandler`），重载走错误浮层的「重试」
 
 顺带解决 `/remote` → `/cn/remote` 这类同域跳转同样被甩出去的问题。
+
+## 常驻通知
+
+上游在远控打开时起一个 `RemoteControlKeepAliveService`（`FOREGROUND_SERVICE_TYPE_DATA_SYNC`，通知 id 1001），目的是降低 WebView / WebSocket 在后台被系统冻结或回收的概率 —— 源码注释自述「纯浏览器后台后 WebView/JS/WebSocket 容易被系统暂停或回收」。
+
+Android 不允许前台服务不带通知，所以补丁的做法是**去掉 `POST_NOTIFICATIONS` 声明**、同时删掉 `MainActivity` 里的 `requestNotificationPermissionIfNeeded()`：Android 13+ 上没这个权限，通知就不会出现在通知栏（只在「正在运行的应用」里可见），而服务本身照旧跑。保活能力保留，通知栏变干净。`< 13` 的老系统上通知仍会出现，这是系统限制。
 
 ## 图标
 
@@ -82,8 +89,11 @@ cat ../self/patches/*.patch > expected.patch
 git diff > actual.patch
 diff -u expected.patch actual.patch
 
-# 3. 换图标后：res/ 之外不许再冒出别的改动
-git status --porcelain | grep -vE 'local.properties|src/main/res/|ui/RemoteControlApp\.kt' && exit 1
+# 3. 换图标后：把 res/ 排除掉，改动必须仍然逐字节等于补丁
+git diff -- . ':(exclude)packages/android/app/src/main/res' > after_icon.patch
+diff -u expected.patch after_icon.patch
+# res/ 里也不许出现图标以外的改动（含未跟踪文件）
+git status --porcelain | grep -vE 'local.properties|src/main/res/' && exit 1
 ```
 
 除 `local.properties`（只含一行 `sdk.dir`）和 `patches/` 里的补丁之外，上游源码树有任何改动就中止构建。产物里附 `upstream-commit.txt`（编译用的提交号）和 `patches.txt`（补丁哈希）。

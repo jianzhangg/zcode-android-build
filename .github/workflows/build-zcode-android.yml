@@ -93,13 +93,17 @@ jobs:
           cp -R "$GITHUB_WORKSPACE"/self/icon/res/. "$RES"/
           echo "--- res 改动 ---"
           git status --porcelain | grep "$RES" || true
-          # 图标只允许动 res/，其它改动必须已经由补丁解释
-          unexpected=$(git status --porcelain \
+          # 图标只允许动 res/：把 res/ 排除掉之后，改动必须仍然逐字节等于补丁
+          git diff -- . ":(exclude)$RES" > "$RUNNER_TEMP/after_icon.patch"
+          diff -u "$RUNNER_TEMP/expected.patch" "$RUNNER_TEMP/after_icon.patch" \
+            || { echo "::error::图标覆盖步骤改动了 res/ 以外的文件"; exit 1; }
+          # res/ 里也不许冒出图标以外的改动（含未跟踪文件）
+          stray=$(git status --porcelain \
             | grep -v '^?? packages/android/local.properties$' \
-            | grep -vE 'packages/android/app/src/main/res/|ui/RemoteControlApp\.kt' || true)
-          if [ -n "$unexpected" ]; then
-            echo "::error::图标覆盖步骤出现了预期外的改动"
-            echo "$unexpected"
+            | grep -vE "$RES/" || true)
+          if [ -n "$stray" ]; then
+            echo "::error::图标覆盖步骤出现了 res/ 之外的改动"
+            echo "$stray"
             exit 1
           fi
           echo "OK：图标只动了 res/"
