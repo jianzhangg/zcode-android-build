@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """从 ZCode PWA 的 icon-512.png 生成 Android 壳的整套启动图标。
 
-输入：icon/src/icon-512.png（深底 + 薄荷绿终端图形）
+输入：icon/src/icon-512.png（ZCode PWA 的图标，即 ../zcode-pwa/icons/icon-512.png，深底 + 薄荷绿终端图形）
 输出：icon/res/ 下按密度铺好的 PNG 与 adaptive-icon 表述文件，CI 直接把 icon/res 覆盖进
       app/src/main/res，并删掉上游那套 .webp 位图。
 
@@ -26,9 +26,10 @@ LEGACY_SIZES = {
     "xxxhdpi": 192,
 }
 
-# adaptive-icon 前景画布 108dp，内容取画布的 50%，留在 66dp 安全区内
+# adaptive-icon 前景画布 108dp；可见区约 72dp，图形取画布的 36%，
+# 换算到可见区正好是 52%，和源图里终端图形占 512 的比例一致
 ADAPTIVE_DP = 108
-FOREGROUND_RATIO = 0.47
+FOREGROUND_RATIO = 0.36
 
 
 def rgb_distance(a: tuple[int, int, int], b: tuple[int, int, int]) -> float:
