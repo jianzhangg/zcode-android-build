@@ -15,7 +15,7 @@ on:
       - "icon/**"
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
@@ -151,3 +151,20 @@ jobs:
           path: out/
           if-no-files-found: error
           retention-days: 30
+
+      # artifact 会被重定向到 *.blob.core.windows.net（本次实测落在南非的
+      # productionresultssa19），国内直连基本拉不动；Release 附件走
+      # objects.githubusercontent.com，既能挂代理也能套加速前缀，所以同时发一份
+      - name: Publish rolling release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG=latest
+          gh release delete "$TAG" --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag 2>/dev/null || true
+          gh release create "$TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "latest" \
+            --notes "commit ${{ github.sha }}，上游 $(head -1 out/upstream-commit.txt)" \
+            --latest \
+            out/*.apk out/SHA256SUMS.txt out/upstream-commit.txt out/patches.txt
+          echo "直链：https://github.com/$GITHUB_REPOSITORY/releases/download/$TAG/$(basename out/*.apk)"

@@ -12,9 +12,19 @@
 
 1. Actions → **Build ZCode Android APK** → **Run workflow**
 2. `upstream_ref` 留 `main` 就是官方最新；要固定版本就填提交号或 tag
-3. 跑完在 run 页面底部下载 `zcode-android-release` 产物
+3. 跑完从 [Releases](https://github.com/jianzhangg/zcode-android-build/releases) 下 `latest` 里的 APK
 
-已发布的 APK 在 [Releases](https://github.com/jianzhangg/zcode-android-build/releases)。
+## 为什么别从 Artifacts 下载
+
+Actions 的 artifact 下载会被 302 到 `*.blob.core.windows.net`（实测落在南非的 `productionresultssa19`），这条路既不在常见代理规则的 `github.com` / `githubusercontent.com` 里，也没有国内 CDN，几十 KB/s 或者直接 TLS 超时都正常。
+
+所以 workflow 跑完会额外发一个 rolling Release（tag 固定 `latest`，每跑一次删旧建新，URL 不变）：
+
+```bash
+curl -L -O https://github.com/jianzhangg/zcode-android-build/releases/download/latest/zcode-android-<sha8>-patched.apk
+```
+
+Release 附件走 `objects.githubusercontent.com`，代理能覆盖，也套得上加速前缀（例如 `https://ghfast.top/` 拼在原 URL 前面）。文件名里的 sha8 是上游提交号，每次可能变，先看 Release 页确认。
 
 ## 产出说明
 
