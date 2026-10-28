@@ -47,13 +47,15 @@
 
 ## 图标
 
-用 ZCode PWA 那一版，源头是 `icon/src/icon-512.png`，`icon/generate.py`（Pillow）生成 `icon/res/`：
+用 ZCode 官方应用图标：纯黑底 + 白色 Z。
 
-- `mipmap-*dpi/ic_launcher.png` 与 `ic_launcher_round.png`：传统方形图标 + 圆形版，48/72/96/144/192 px
-- `mipmap-*dpi/ic_launcher_foreground.png`：自适应图标前景，深底扣成透明，画布 108dp，图形占 47%
-- `mipmap-anydpi-v26/ic_launcher{,_round}.xml`：`<background>` 指向 `@color/zcode_icon_background`（`#111318`），`<monochrome>` 复用前景
+源头是 mac 上 `/Applications/ZCode.app/Contents/Resources/icon.png` 直接拷来的 `icon/src/zcode-app-1024.png`（macOS squircle，四角透明、带一点自上而下的渐变）。安卓要满幅方形，所以 `icon/generate.py`（Pillow）把白 Z 抠出来重铺到纯黑底 `#0A0B0C` 上：
 
-CI 覆盖图标时会先删掉上游那套 `.webp`，再整目录拷进去。
+- `mipmap-*dpi/ic_launcher.png` 与 `ic_launcher_round.png`：传统方形 + 圆形版，48/72/96/144/192 px，Z 占边长 49.8%（与源图一致）
+- `mipmap-*dpi/ic_launcher_foreground.png`：adaptive 前景，透明画布 108dp，只放白 Z，换算成可见区里同样是 49.8%
+- `mipmap-anydpi-v26/ic_launcher{,_round}.xml`：`<background>` 指向 `@color/zcode_icon_background`，`<monochrome>` 复用前景供主题图标取色
+
+上游那套图标是 AOSP 模板（绿色机器人 + `.webp` 位图），CI 覆盖时先删 `.webp` 再整目录拷进去。换掉它同时意味着启动器不再显示 Android 默认机器人。
 
 ## 源码完整性
 

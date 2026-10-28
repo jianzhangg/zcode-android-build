@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
-"""从 ZCode PWA 的 icon-512.png 生成 Android 壳的整套启动图标。
+"""生成 ZCode 安卓启动图标：纯黑底 + 白色 Z。
 
-输入：icon/src/icon-512.png（ZCode PWA 的图标，即 ../zcode-pwa/icons/icon-512.png，深底 + 薄荷绿终端图形）
-输出：icon/res/ 下按密度铺好的 PNG 与 adaptive-icon 表述文件，CI 直接把 icon/res 覆盖进
-      app/src/main/res，并删掉上游那套 .webp 位图。
+输入：icon/src/zcode-app-1024.png，直接取自
+      /Applications/ZCode.app/Contents/Resources/icon.png（ZCode 官方应用图标）。
+源图是 macOS squircle（四角透明、带一点自上而下的渐变），安卓要满幅方形，
+所以这里把白 Z 抠出来重新铺到纯黑底上。
+
+输出：icon/res/ 下按密度铺好的传统图标、圆形图标、adaptive-icon 前景与配色。
+      CI 直接把 icon/res 覆盖进 app/src/main/res，并删掉上游那套 .webp 位图。
 
 用法：python3 icon/generate.py
 依赖：Pillow
@@ -14,91 +18,102 @@ from pathlib import Path
 from PIL import Image, ImageDraw
 
 HERE = Path(__file__).resolve().parent
-SOURCE = HERE / "src" / "icon-512.png"
+SOURCE = HERE / "src" / "zcode-app-1024.png"
 OUT = HERE / "res"
 
-# 传统图标边长（dp 1:1 像素）
-LEGACY_SIZES = {
-    "mdpi": 48,
-    "hdpi": 72,
-    "xhdpi": 96,
-    "xxhdpi": 144,
-    "xxxhdpi": 192,
+BG = (10, 11, 12)  # 取自源图背景中位数，看起来就是纯黑
+DENSITIES = {
+    "mdpi": 1.0,
+    "hdpi": 1.5,
+    "xhdpi": 2.0,
+    "xxhdpi": 3.0,
+    "xxxhdpi": 4.0,
 }
 
-# adaptive-icon 前景画布 108dp；可见区约 72dp，图形取画布的 36%，
-# 换算到可见区正好是 52%，和源图里终端图形占 512 的比例一致
-ADAPTIVE_DP = 108
-FOREGROUND_RATIO = 0.36
+
+def extract_glyph():
+    """把白 Z 抠成白色 RGBA，alpha 用亮度还原，边缘保留半透明过渡。"""
+    image = Image.open(SOURCE).convert("RGBA")
+    source = image.load()
+    width, height = image.size
+
+    xs, ys = [], []
+    for y in range(height):
+        for x in range(width):
+            r, g, b, a = source[x, y]
+            if a > 200 and r > 200 and g > 200 and b > 200:
+                xs.append(x)
+                ys.append(y)
+    box = (min(xs), min(ys), max(xs) + 1, max(ys) + 1)
+
+    glyph = Image.new("RGBA", (box[2] - box[0], box[3] - box[1]), (0, 0, 0, 0))
+    target = glyph.load()
+    for y in range(box[1], box[3]):
+        for x in range(box[0], box[2]):
+            r, g, b, a = source[x, y]
+            if a == 0:
+                continue
+            # 源图是白字压在近黑底上，亮度即覆盖率
+            coverage = min(255, max(0, round((r - BG[0]) * 255 / (255 - BG[0]))))
+            if coverage:
+                target[x - box[0], y - box[1]] = (255, 255, 255, coverage)
+    return glyph, box
 
 
-def rgb_distance(a: tuple[int, int, int], b: tuple[int, int, int]) -> float:
-    return sum((x - y) ** 2 for x, y in zip(a, b)) ** 0.5
+def compose(glyph, size, glyph_ratio, background=BG, circle=False):
+    canvas = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    if background is not None:
+        ImageDraw.Draw(canvas).rectangle((0, 0, size, size), fill=background + (255,))
 
+    target_w = max(1, round(size * glyph_ratio))
+    scale = target_w / glyph.size[0]
+    scaled = glyph.resize((target_w, max(1, round(glyph.size[1] * scale))), Image.LANCZOS)
+    canvas.alpha_composite(scaled, ((size - scaled.size[0]) // 2, (size - scaled.size[1]) // 2))
 
-def key_out_background(image: Image.Image, bg: tuple[int, int, int], fg: tuple[int, int, int]) -> Image.Image:
-    """把纯色底扣成透明，边缘按到底色的距离做线性 alpha，保留抗锯齿。"""
-    span = rgb_distance(bg, fg)
-    out = Image.new("RGBA", image.size)
-    pixels = []
-    for r, g, b in image.convert("RGB").getdata():
-        alpha = round(min(1.0, rgb_distance((r, g, b), bg) / span) * 255)
-        pixels.append((r, g, b, alpha))
-    out.putdata(pixels)
-    return out
-
-
-def main() -> None:
-    source = Image.open(SOURCE).convert("RGB")
-    bg = source.getpixel((0, 0))
-    glyph = (141, 240, 187)  # 采样自源图，见 README
-
-    glyph_layer = key_out_background(source, bg, glyph)
-    bbox = glyph_layer.getbbox()
-    if bbox is None:
-        raise SystemExit("源图标里没有可提取的图形")
-    glyph_layer = glyph_layer.crop(bbox)
-    print(f"底色 #{bg[0]:02X}{bg[1]:02X}{bg[2]:02X}，图形框 {bbox}")
-
-    for density, size in LEGACY_SIZES.items():
-        target = OUT / f"mipmap-{density}"
-        target.mkdir(parents=True, exist_ok=True)
-
-        source.resize((size, size), Image.LANCZOS).save(target / "ic_launcher.png")
-
-        # round 版：同样内容的圆形裁切，四角留透明
-        round_icon = source.resize((size, size), Image.LANCZOS).convert("RGBA")
+    if circle:
+        # 放大四倍再缩小，避免硬边锯齿
         mask = Image.new("L", (size * 4, size * 4), 0)
         ImageDraw.Draw(mask).ellipse((0, 0, size * 4 - 1, size * 4 - 1), fill=255)
-        round_icon.putalpha(mask.resize((size, size), Image.LANCZOS))
-        round_icon.save(target / "ic_launcher_round.png")
+        canvas.putalpha(mask.resize((size, size), Image.LANCZOS))
 
-        canvas = round(size * ADAPTIVE_DP / 48)
-        scale = canvas * FOREGROUND_RATIO / max(glyph_layer.size)
-        scaled = glyph_layer.resize(
-            (round(glyph_layer.width * scale), round(glyph_layer.height * scale)),
-            Image.LANCZOS,
-        )
-        foreground = Image.new("RGBA", (canvas, canvas), (0, 0, 0, 0))
-        foreground.paste(
-            scaled,
-            ((canvas - scaled.width) // 2, (canvas - scaled.height) // 2),
-            scaled,
-        )
-        foreground.save(target / "ic_launcher_foreground.png")
-        print(f"{density}: legacy {size}px, adaptive {canvas}px")
+    return canvas
 
+
+def main():
+    glyph, box = extract_glyph()
+    src_edge = Image.open(SOURCE).size[0]
+
+    # 源图里 Z 占整幅边长的比例，传统图标沿用这个比例
+    legacy_ratio = (box[2] - box[0]) / src_edge
+    # adaptive 可见区约 72dp、画布 108dp，换算过去让可见区里的比例与源图一致
+    fg_ratio = legacy_ratio * 72 / 108
+
+    print(f"源图 Z 边界 {box}，占边长 {legacy_ratio:.1%}")
+
+    for name, scale in DENSITIES.items():
+        target = OUT / f"mipmap-{name}"
+        target.mkdir(parents=True, exist_ok=True)
+
+        legacy_px = round(48 * scale)
+        compose(glyph, legacy_px, legacy_ratio).convert("RGB").save(target / "ic_launcher.png")
+        compose(glyph, legacy_px, legacy_ratio, circle=True).save(target / "ic_launcher_round.png")
+
+        # adaptive 前景：透明画布 108dp，只放白 Z，底色由 <background> 铺
+        fg_px = round(108 * scale)
+        compose(glyph, fg_px, fg_ratio, background=None).save(target / "ic_launcher_foreground.png")
+        print(f"{name}: legacy {legacy_px}px, foreground {fg_px}px")
+
+    # adaptive-icon 表述：底色走 <background>，白 Z 走 <foreground>，<monochrome> 给主题图标用
     anydpi = OUT / "mipmap-anydpi-v26"
     anydpi.mkdir(parents=True, exist_ok=True)
-    for name in ("ic_launcher.xml", "ic_launcher_round.xml"):
-        (anydpi / name).write_text(
+    for filename in ("ic_launcher.xml", "ic_launcher_round.xml"):
+        (anydpi / filename).write_text(
             '<?xml version="1.0" encoding="utf-8"?>\n'
             '<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">\n'
             '    <background android:drawable="@color/zcode_icon_background" />\n'
             '    <foreground android:drawable="@mipmap/ic_launcher_foreground" />\n'
             '    <monochrome android:drawable="@mipmap/ic_launcher_foreground" />\n'
-            "</adaptive-icon>\n",
-            encoding="utf-8",
+            "</adaptive-icon>\n"
         )
 
     values = OUT / "values"
@@ -106,10 +121,10 @@ def main() -> None:
     (values / "zcode_icon_colors.xml").write_text(
         '<?xml version="1.0" encoding="utf-8"?>\n'
         "<resources>\n"
-        f'    <color name="zcode_icon_background">#{bg[0]:02X}{bg[1]:02X}{bg[2]:02X}</color>\n'
-        "</resources>\n",
-        encoding="utf-8",
+        f'    <color name="zcode_icon_background">#{BG[0]:02X}{BG[1]:02X}{BG[2]:02X}</color>\n'
+        "</resources>\n"
     )
+    print("配色写入 res/values/zcode_icon_colors.xml")
 
 
 if __name__ == "__main__":

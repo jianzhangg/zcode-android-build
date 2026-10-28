@@ -88,7 +88,7 @@ jobs:
         run: |
           cd zcode
           RES=packages/android/app/src/main/res
-          # 上游图标是 .webp + 两个 vector，整套换成 ZCode PWA 那版（icon/res 由 icon/generate.py 生成）
+          # 上游图标是 .webp + 两个 vector（AOSP 模板），整套换成 ZCode 官方图标（icon/res 由 icon/generate.py 生成）
           rm -f "$RES"/mipmap-*/ic_launcher.webp "$RES"/mipmap-*/ic_launcher_round.webp
           cp -R "$GITHUB_WORKSPACE"/self/icon/res/. "$RES"/
           echo "--- res 改动 ---"
